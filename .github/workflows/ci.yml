@@ -1,40 +1,48 @@
 name: CI
 on:
   push:
-  release:
-    types: [ published ]
+    tags:
+      - 'v*'
+    branches:
+      - '*'
   pull_request:
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
-    - uses: coursier/cache-action@v6
-    - uses: VirtusLab/scala-cli-setup@v1
+    - uses: actions/setup-java@v4
       with:
-        power: true
+        distribution: 'temurin'
+        java-version: '21'
+    - uses: coursier/cache-action@v6
+    - name: Check formatting
+      run: ./sbt scalafmtCheckAll scalafmtSbtCheck
+    - name: Compile
+      run: ./sbt +compile
     - name: Test
-      run: scala-cli compile . --cross
+      run: ./sbt +test
 
   publish:
     needs: test
-    if: github.event_name == 'push'
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
-    - uses: coursier/cache-action@v6
-    - uses: VirtusLab/scala-cli-setup@v1
+    - uses: actions/setup-java@v4
       with:
-        power: true
+        distribution: 'temurin'
+        java-version: '21'
+    - uses: coursier/cache-action@v6
     - name: Publish
-      run: scala-cli publish . --cross
+      run: ./sbt ci-release
       env:
-        PUBLISH_USER: ${{ secrets.PUBLISH_USER }}
-        PUBLISH_PASSWORD: ${{ secrets.PUBLISH_PASSWORD }}
-        PUBLISH_SECRET_KEY: ${{ secrets.PUBLISH_SECRET_KEY }}
-        PUBLISH_SECRET_KEY_PASSWORD: ${{ secrets.PUBLISH_SECRET_KEY_PASSWORD }}
+        SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+        SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+        PGP_PASSPHRASE: ${{ secrets.PGP_PASSPHRASE }}
+        PGP_SECRET: ${{ secrets.PGP_SECRET }}

@@ -1,11 +1,11 @@
-package com.github.sideeffffect.quartz
+package com.chilipiper.quartz
 
 import cats.MonadThrow
 import cats.effect.std.Dispatcher
 import cats.effect.syntax.all._
 import cats.effect.{Async, MonadCancelThrow, Resource, Sync}
 import cats.syntax.all._
-import com.github.sideeffffect.quartz.SchedulerQuartz._
+import com.chilipiper.quartz.SchedulerQuartz._
 import doobie.implicits._
 import doobie.util.fragment.Fragment
 import doobie.util.transactor.Transactor
@@ -29,7 +29,7 @@ private class SchedulerQuartz[A: Encoder: Decoder, F[_]: MonadThrow, G[_]: Sync]
     underlying: org.quartz.Scheduler,
     action: A => F[Unit],
     dispatcher: Dispatcher[F],
-) extends com.github.sideeffffect.quartz.SchedulerCustom[A, G]
+) extends com.chilipiper.quartz.SchedulerCustom[A, G]
     with Job {
 
   def executeF(context: JobExecutionContext): F[Unit] = for {
@@ -153,30 +153,14 @@ object SchedulerQuartz {
       transactor: Transactor.Aux[F, DS],
       dbInitScriptName: Option[String] = None,
       customQuartzConfig: Map[String, String] = Map(),
-  )(action: A => F[Unit]): Resource[F, com.github.sideeffffect.quartz.SchedulerCustom[A, F]] =
-    `makeFor🤡s`(transactor, dbInitScriptName, customQuartzConfig)(action)
+  )(action: A => F[Unit]): Resource[F, com.chilipiper.quartz.SchedulerCustom[A, F]] =
+    makeWithCustomScheduler(transactor, dbInitScriptName, customQuartzConfig)(action)
 
-  /** The same as `makeFor🤡s`, but without the warmth of the clown emoji. */
-  def makeForWelladjustedPeople[A: Encoder: Decoder, DS <: DataSource, F[_]: Async, G[_]: Sync](
+  def makeWithCustomScheduler[A: Encoder: Decoder, DS <: DataSource, F[_]: Async, G[_]: Sync](
       transactor: Transactor.Aux[F, DS],
       dbInitScriptName: Option[String] = None,
       customQuartzConfig: Map[String, String] = Map(),
-  )(action: A => F[Unit]): Resource[F, com.github.sideeffffect.quartz.SchedulerCustom[A, G]] =
-    `makeFor🤡s`(transactor, dbInitScriptName, customQuartzConfig)(action)
-
-  /** The same as `makeForWelladjustedPeople`, but truly inclusive for anybody 🌈. */
-  def makeUniversal[A: Encoder: Decoder, DS <: DataSource, F[_]: Async, G[_]: Sync](
-      transactor: Transactor.Aux[F, DS],
-      dbInitScriptName: Option[String] = None,
-      customQuartzConfig: Map[String, String] = Map(),
-  )(action: A => F[Unit]): Resource[F, com.github.sideeffffect.quartz.SchedulerCustom[A, G]] =
-    makeForWelladjustedPeople(transactor, dbInitScriptName, customQuartzConfig)(action)
-
-  def `makeFor🤡s`[A: Encoder: Decoder, DS <: DataSource, F[_]: Async, G[_]: Sync](
-      transactor: Transactor.Aux[F, DS],
-      dbInitScriptName: Option[String] = None,
-      customQuartzConfig: Map[String, String] = Map(),
-  )(action: A => F[Unit]): Resource[F, com.github.sideeffffect.quartz.SchedulerCustom[A, G]] = for {
+  )(action: A => F[Unit]): Resource[F, com.chilipiper.quartz.SchedulerCustom[A, G]] = for {
     dispatcher <- Dispatcher.parallel[F](await = true)
 
     quartzConfig0 = defaultQuartzConfig ++ customQuartzConfig
@@ -210,5 +194,12 @@ object SchedulerQuartz {
       )
     })
   } yield scheduler
+
+  def makeUniversal[A: Encoder: Decoder, DS <: DataSource, F[_]: Async, G[_]: Sync](
+      transactor: Transactor.Aux[F, DS],
+      dbInitScriptName: Option[String] = None,
+      customQuartzConfig: Map[String, String] = Map(),
+  )(action: A => F[Unit]): Resource[F, com.chilipiper.quartz.SchedulerCustom[A, G]] =
+    makeWithCustomScheduler(transactor, dbInitScriptName, customQuartzConfig)(action)
 
 }
