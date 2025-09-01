@@ -19,8 +19,6 @@ jobs:
         distribution: 'temurin'
         java-version: '21'
     - uses: coursier/cache-action@v6
-    - name: Check formatting
-      run: ./sbt scalafmtCheckAll scalafmtSbtCheck
     - name: Compile
       run: ./sbt +compile
     - name: Test

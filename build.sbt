@@ -1,4 +1,6 @@
-import org.typelevel.scalacoptions._
+import org.typelevel.scalacoptions.*
+import sbt.Keys.versionScheme
+import xerial.sbt.Sonatype.sonatypeCentralHost
 
 val root = (project in file("."))
   .settings(commonSettings)
@@ -28,10 +30,11 @@ lazy val commonSettings = List(
     ScmInfo(
       url("https://github.com/Chili-Piper/scala-quartz"),
       "scm:git:https://github.com/Chili-Piper/scala-quartz.git",
-      Some("scm:git:git@github.com:Chili-Piper/scala-quartz.git")
-    )
+      Some("scm:git:git@github.com:Chili-Piper/scala-quartz.git"),
+    ),
   ),
-  sonatypeCredentialHost := "s01.oss.sonatype.org",
+  sonatypeCredentialHost := sonatypeCentralHost,
+  sonatypeProfileName := "com.chilipiper",
   versionScheme := Some("early-semver"),
   scalaVersion := "2.13.16",
   crossScalaVersions := List(scalaVersion.value, "3.3.6"),
@@ -48,9 +51,6 @@ lazy val commonSettings = List(
   buildInfoKeys := List[BuildInfoKey](organization, moduleName, version),
   buildInfoOptions += BuildInfoOption.ToJson,
   buildInfoPackage := s"${organization.value}.${moduleName.value}".replace("-", "."),
-  Compile / packageBin / packageOptions += Package.ManifestAttributes(
-    "Automatic-Module-Name" -> s"${organization.value}.${moduleName.value}".replace("-", "."),
-  ),
   scalacOptions ++= {
     CrossVersion.partialVersion(scalaVersion.value) match {
       case Some((2, _)) =>
