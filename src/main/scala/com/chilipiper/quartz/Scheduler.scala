@@ -1,4 +1,4 @@
-package com.github.sideeffffect.quartz
+package com.chilipiper.quartz
 
 import org.quartz.{CronExpression, JobDetail, JobKey, Trigger, TriggerBuilder}
 
