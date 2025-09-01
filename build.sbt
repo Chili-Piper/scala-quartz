@@ -12,9 +12,7 @@ val root = (project in file("."))
   )
   .enablePlugins(BuildInfoPlugin)
 
-lazy val commonSettings = commonSettingsMisc
-
-lazy val commonSettingsMisc = List(
+lazy val commonSettings = List(
   organization := "com.chilipiper",
   homepage := Some(url("https://github.com/Chili-Piper/scala-quartz/")),
   licenses := List("Apache-2.0" -> url("http://www.apache.org/licenses/LICENSE-2.0")),
