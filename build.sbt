@@ -24,6 +24,13 @@ lazy val commonSettings = List(
       url = url("https://chilipiper.com"),
     ),
   ),
+  scmInfo := Some(
+    ScmInfo(
+      url("https://github.com/Chili-Piper/scala-quartz"),
+      "scm:git:https://github.com/Chili-Piper/scala-quartz.git",
+      Some("scm:git:git@github.com:Chili-Piper/scala-quartz.git")
+    )
+  ),
   sonatypeCredentialHost := "s01.oss.sonatype.org",
   versionScheme := Some("early-semver"),
   scalaVersion := "2.13.16",
