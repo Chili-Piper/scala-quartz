@@ -1,0 +1,30 @@
+# This workflow will launch at 00:00 every Sunday
+on:
+  schedule:
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+
+name: Launch Scala Steward
+
+jobs:
+  scala-steward:
+    runs-on: [cp-small]
+    name: Launch Scala Steward
+    steps:
+      - name: Setup jdk
+        uses: coursier/setup-action@v1.3.9
+        with:
+          jvm: temurin:1.17
+
+      - name: Auth with google
+        uses: "google-github-actions/auth@v2"
+        with:
+          credentials_json: "${{ secrets.GOOGLE_CREDENTIALS }}"
+          create_credentials_file: true
+
+      - name: Launch Scala Steward
+        uses: scala-steward-org/scala-steward-action@v2
+        with:
+          github-token: ${{ secrets.SCALA_STEWARD }}
+          author-email: "scala-steward@chilipiper.com"
+          author-name: "Scala Steward Bot"
