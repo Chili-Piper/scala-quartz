@@ -1,6 +1,5 @@
 import org.typelevel.scalacoptions.*
 import sbt.Keys.versionScheme
-import xerial.sbt.Sonatype.sonatypeCentralHost
 
 val root = (project in file("."))
   .settings(commonSettings)
@@ -33,8 +32,6 @@ lazy val commonSettings = List(
       Some("scm:git:git@github.com:Chili-Piper/scala-quartz.git"),
     ),
   ),
-  sonatypeCredentialHost := sonatypeCentralHost,
-  sonatypeProfileName := "com.chilipiper",
   versionScheme := Some("early-semver"),
   scalaVersion := "2.13.16",
   crossScalaVersions := List(scalaVersion.value, "3.3.6"),
