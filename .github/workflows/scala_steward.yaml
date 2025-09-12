@@ -16,12 +16,6 @@ jobs:
         with:
           jvm: temurin:1.17
 
-      - name: Auth with google
-        uses: "google-github-actions/auth@v2"
-        with:
-          credentials_json: "${{ secrets.GOOGLE_CREDENTIALS }}"
-          create_credentials_file: true
-
       - name: Launch Scala Steward
         uses: scala-steward-org/scala-steward-action@v2
         with:
