@@ -5,7 +5,7 @@ object Dependencies {
   object Versions {
     val quartz = "2.5.0"
     val doobie = "1.0.0-RC9"
-    val circe = "0.14.14"
+    val circe = "0.14.15"
   }
 
   val quartz = "org.quartz-scheduler" % "quartz" % Versions.quartz
