@@ -39,7 +39,7 @@ lazy val commonSettings = List(
     CrossVersion.partialVersion(scalaVersion.value) match {
       case Some((2, _)) =>
         List(
-          "org.typelevel" % "kind-projector" % "0.13.3" cross CrossVersion.full,
+          "org.typelevel" % "kind-projector" % "0.13.4" cross CrossVersion.full,
           "com.olegpy" %% "better-monadic-for" % "0.3.1",
         )
       case _ => List()
