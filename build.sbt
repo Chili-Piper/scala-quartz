@@ -33,7 +33,7 @@ lazy val commonSettings = List(
     ),
   ),
   versionScheme := Some("early-semver"),
-  scalaVersion := "2.13.17",
+  scalaVersion := "2.13.16",
   crossScalaVersions := List(scalaVersion.value, "3.3.7"),
   libraryDependencies ++= {
     CrossVersion.partialVersion(scalaVersion.value) match {
