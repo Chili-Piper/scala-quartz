@@ -3,7 +3,7 @@ import sbt._
 object Dependencies {
 
   object Versions {
-    val quartz = "2.5.1"
+    val quartz = "2.5.2"
     val doobie = "1.0.0-RC9"
     val circe = "0.14.15"
   }
