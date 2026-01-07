@@ -85,6 +85,7 @@ class SchedulerQuartz[A: Encoder: Decoder, F[_]: MonadThrow, G[_]: Sync](
         .withIdentity(jobKey)
         .usingJobData(jobDataMapKey, jobData.asJson.spaces2SortKeys)
         .requestRecovery(true)
+        .storeDurably(true)
         .build()
     }
     trigger <- Sync[G].blocking {
