@@ -6,6 +6,7 @@ import cats.effect.syntax.all._
 import cats.effect.{Async, MonadCancelThrow, Resource, Sync}
 import cats.syntax.all._
 import com.chilipiper.quartz.SchedulerQuartz._
+import doobie.ConnectionIO
 import doobie.implicits._
 import doobie.util.fragment.Fragment
 import doobie.util.transactor.Transactor
@@ -128,30 +129,26 @@ object SchedulerQuartz {
     "org.quartz.jobStore.isClustered" -> "true",
   )
 
-  private def dbInit[F[_]: Sync, DS <: DataSource](
-      transactor: Transactor.Aux[F, DS],
-  )(dbInitScriptName: String): F[Unit] = for {
-    dbInitScript <- Sync[F].blocking(
+  private def getBbInitScript[F[_]: Sync](dbInitScriptName: String): F[Fragment] = for {
+    dbInitScript <- Sync[F].interruptible(
       getClass
         .getResourceAsStream(s"/org/quartz/impl/jdbcjobstore/$dbInitScriptName")
         .pipe(Source.fromInputStream)
         .mkString
         .pipe(Fragment.const(_)),
     )
-    _ <- dbInitScript.updateWithLabel("SchedulerQuartzDbInit").run.transact(transactor)
-  } yield ()
+  } yield dbInitScript
 
-  private def isDbInitialized[F[_]: MonadCancelThrow, DS <: DataSource](
-      transactor: Transactor.Aux[F, DS],
+  private def isDbInitialized(
       prefix: String,
       schema: String = "public",
-  ): F[Boolean] = sql"""
+  ): ConnectionIO[Boolean] = sql"""
     SELECT EXISTS (
       SELECT 1
       FROM information_schema.tables
       WHERE table_schema = $schema AND LOWER(table_name) LIKE LOWER(${prefix + "%"})
     )
-  """.query[Boolean].unique.transact(transactor)
+  """.query[Boolean].unique
 
   def make[A: Encoder: Decoder, DS <: DataSource, F[_]: Async](
       transactor: Transactor.Aux[F, DS],
@@ -171,8 +168,15 @@ object SchedulerQuartz {
     dataSourceValue = s"${quartzConfig0(instanceNameKey)}DS"
     quartzConfig = quartzConfig0 ++ Map(dataSourceKey -> dataSourceValue)
 
-    dbIsInitialized <- isDbInitialized(transactor, quartzConfig(tablePrefixKey)).toResource
-    _ <- Async[F].unlessA(dbIsInitialized)(dbInitScriptName.traverse(dbInit(transactor))).toResource
+    dbInitScript <- dbInitScriptName.traverse(getBbInitScript[F]).toResource
+    _ <- (
+      for {
+        dbIsInitialized <- isDbInitialized(quartzConfig(tablePrefixKey))
+        _ <- MonadCancelThrow[ConnectionIO].unlessA(dbIsInitialized)(
+          dbInitScript.traverse(_.updateWithLabel("SchedulerQuartzDbInit").run),
+        )
+      } yield ()
+    ).transact(transactor).toResource
 
     scheduler <- Resource[F, SchedulerQuartz[A, F, G]](Sync[F].interruptible {
       DBConnectionManager
