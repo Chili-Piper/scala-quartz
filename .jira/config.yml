@@ -1,0 +1,16 @@
+deployments:
+  environmentMapping:
+    development:
+      - "sandbox"
+      - "*-sandbox"
+    testing:
+      - "testing"
+      - "*-testing"
+    staging:
+      - "staging"
+      - "*-staging"
+    production:
+      - "production"
+      - "canary"
+      - "*-production"
+      - "*-canary"
