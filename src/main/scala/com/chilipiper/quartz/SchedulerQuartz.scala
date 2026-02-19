@@ -15,6 +15,7 @@ import io.circe.syntax._
 import io.circe.{Decoder, Encoder}
 import org.quartz._
 import org.quartz.impl.StdSchedulerFactory
+import org.quartz.impl.matchers.GroupMatcher
 import org.quartz.spi.TriggerFiredBundle
 import org.quartz.utils._
 
@@ -60,6 +61,30 @@ class SchedulerQuartz[A: Encoder: Decoder, F[_]: MonadThrow, G[_]: Sync](
     underlying.deleteJob(jobKey)
   }
 
+  override def addJob(jobDetail: JobDetail, replace: Boolean): G[Unit] = Sync[G].interruptible {
+    underlying.addJob(jobDetail, replace)
+  }
+
+  override def triggerJob(jobKey: JobKey): G[Unit] = Sync[G].interruptible {
+    underlying.triggerJob(jobKey)
+  }
+
+  override def getJobKeys(matcher: GroupMatcher[JobKey]): G[Set[JobKey]] = Sync[G].interruptible {
+    underlying.getJobKeys(matcher).asScala
+  }
+
+  override def getJobDetail(jobKey: JobKey): G[JobDetail] = Sync[G].interruptible {
+    underlying.getJobDetail(jobKey)
+  }
+
+  override def newJobDetail(jobKey: JobKey, jobData: A, customize: JobBuilder => JobBuilder = identity): JobDetail =
+    JobBuilder
+      .newJob(classOf[SchedulerQuartz[A, F, G]])
+      .pipe(customize)
+      .withIdentity(jobKey)
+      .usingJobData(jobDataMapKey, jobData.asJson.spaces2SortKeys)
+      .build()
+
   override def scheduleJobCustom(jobKey: JobKey, jobData: A, cronExpression: CronExpression): G[Unit] =
     scheduleJobCustom(
       jobKey,
@@ -79,21 +104,17 @@ class SchedulerQuartz[A: Encoder: Decoder, F[_]: MonadThrow, G[_]: Sync](
       jobKey: JobKey,
       jobData: A,
       configure: TriggerBuilder[Trigger] => TriggerBuilder[? <: Trigger],
+      customizeJob: JobBuilder => JobBuilder = identity,
   ): G[Instant] = for {
     jobDetail <- Sync[G].blocking {
-      JobBuilder
-        .newJob(classOf[SchedulerQuartz[A, F, G]])
-        .withIdentity(jobKey)
-        .usingJobData(jobDataMapKey, jobData.asJson.spaces2SortKeys)
-        .requestRecovery(true)
-        .build()
+      newJobDetail(jobKey, jobData, _.requestRecovery(true).pipe(customizeJob))
     }
     trigger <- Sync[G].blocking {
       TriggerBuilder
         .newTrigger()
+        .pipe(configure)
         .withIdentity(TriggerKey.triggerKey(jobKey.getName, jobKey.getGroup))
         .forJob(jobDetail)
-        .pipe(configure)
         .build()
     }
     exists <- checkExists(jobKey)
@@ -169,14 +190,17 @@ object SchedulerQuartz {
     quartzConfig = quartzConfig0 ++ Map(dataSourceKey -> dataSourceValue)
 
     dbInitScript <- dbInitScriptName.traverse(getBbInitScript[F]).toResource
-    _ <- (
-      for {
-        dbIsInitialized <- isDbInitialized(quartzConfig(tablePrefixKey))
-        _ <- MonadCancelThrow[ConnectionIO].unlessA(dbIsInitialized)(
-          dbInitScript.traverse(_.updateWithLabel("SchedulerQuartzDbInit").run),
-        )
-      } yield ()
-    ).transact(transactor).toResource
+    _ <- dbInitScript
+      .traverse { dbInitScript =>
+        for {
+          dbIsInitialized <- isDbInitialized(quartzConfig(tablePrefixKey))
+          _ <- MonadCancelThrow[ConnectionIO].unlessA(dbIsInitialized)(
+            dbInitScript.updateWithLabel("SchedulerQuartzDbInit").run,
+          )
+        } yield ()
+      }
+      .transact(transactor)
+      .toResource
 
     scheduler <- Resource[F, SchedulerQuartz[A, F, G]](Sync[F].interruptible {
       DBConnectionManager
