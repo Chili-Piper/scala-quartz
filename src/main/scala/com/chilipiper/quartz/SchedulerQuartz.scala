@@ -70,7 +70,7 @@ class SchedulerQuartz[A: Encoder: Decoder, F[_]: MonadThrow, G[_]: Sync](
   }
 
   override def getJobKeys(matcher: GroupMatcher[JobKey]): G[Set[JobKey]] = Sync[G].interruptible {
-    underlying.getJobKeys(matcher).asScala
+    underlying.getJobKeys(matcher).asScala.toSet
   }
 
   override def getJobDetail(jobKey: JobKey): G[JobDetail] = Sync[G].interruptible {
