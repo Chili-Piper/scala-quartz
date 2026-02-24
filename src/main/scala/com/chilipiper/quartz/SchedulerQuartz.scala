@@ -54,7 +54,7 @@ class SchedulerQuartz[A: Encoder: Decoder, F[_]: Sync, G[_]: Sync](
     )
   }
 
-  @deprecated("This method must be here because of extending `org.quartz.Job`, but you're not supposed to use it.")
+  @deprecated("This method must be here because of extending `org.quartz.Job`, but you're not supposed to use it.", "0.4.5")
   override def execute(context: JobExecutionContext): Unit = dispatcher.unsafeRunAndForget(executeF(context))
 
   override def scheduleJob(trigger: Trigger): G[Instant] = Sync[G].interruptible {
