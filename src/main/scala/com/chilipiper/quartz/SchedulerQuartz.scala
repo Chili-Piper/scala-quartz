@@ -1,6 +1,5 @@
 package com.chilipiper.quartz
 
-import cats.MonadThrow
 import cats.effect.std.Dispatcher
 import cats.effect.syntax.all._
 import cats.effect.{Async, MonadCancelThrow, Resource, Sync}
@@ -22,12 +21,13 @@ import org.quartz.utils._
 import java.sql.Connection
 import java.time.Instant
 import java.util.Properties
+import java.util.logging.{Level, Logger}
 import javax.sql.DataSource
 import scala.io.Source
 import scala.jdk.CollectionConverters._
 import scala.util.chaining._
 
-class SchedulerQuartz[A: Encoder: Decoder, F[_]: MonadThrow, G[_]: Sync](
+class SchedulerQuartz[A: Encoder: Decoder, F[_]: Sync, G[_]: Sync](
     underlying: org.quartz.Scheduler,
     action: A => F[Unit],
     dispatcher: Dispatcher[F],
@@ -38,11 +38,23 @@ class SchedulerQuartz[A: Encoder: Decoder, F[_]: MonadThrow, G[_]: Sync](
 
   def executeAction(a: A): F[Unit] = action(a)
 
-  def executeF(context: JobExecutionContext): F[Unit] = for {
-    jobData <- decode[A](context.getJobDetail.getJobDataMap.getString(jobDataMapKey)).liftTo[F]
+  def executeF(context: JobExecutionContext): F[Unit] = (for {
+    jobDataString <- Sync[F].delay(context.getJobDetail.getJobDataMap.getString(jobDataMapKey))
+    jobData <- decode[A](jobDataString).liftTo[F]
     _ <- executeAction(jobData)
-  } yield ()
+  } yield ()).uncancelable.handleErrorWith { e =>
+    Sync[F].blocking(
+      Logger
+        .getLogger(getClass.getName)
+        .log(
+          Level.SEVERE,
+          s"Error in `SchedulerQuartz#executeF`. This must not happen, users of `SchedulerQuartz` are expected to handle all errors in `action`.\n$context\n${context.getJobDetail}\n${context.getJobDetail.getJobDataMap.asScala}",
+          e,
+        ),
+    )
+  }
 
+  @deprecated("This method must be here because of extending `org.quartz.Job`, but you're not supposed to use it.", "0.4.5")
   override def execute(context: JobExecutionContext): Unit = dispatcher.unsafeRunAndForget(executeF(context))
 
   override def scheduleJob(trigger: Trigger): G[Instant] = Sync[G].interruptible {

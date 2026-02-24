@@ -1,10 +1,9 @@
 name: CI
 on:
+  release:
+    types: [ published ]
   push:
-    tags:
-      - 'v*'
-    branches:
-      - '*'
+    branches: [ main ]
   pull_request:
 
 jobs:
@@ -17,7 +16,8 @@ jobs:
     - uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
-        java-version: '21'
+        java-version: '17'
+        cache: 'sbt'
     - uses: coursier/cache-action@v6
     - name: Compile
       run: ./sbt +compile
@@ -35,7 +35,8 @@ jobs:
     - uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
-        java-version: '21'
+        java-version: '17'
+        cache: 'sbt'
     - uses: coursier/cache-action@v6
     - name: Publish
       run: ./sbt ci-release
