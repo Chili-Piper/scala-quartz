@@ -30,7 +30,7 @@ import scala.util.chaining._
 class SchedulerQuartz[A: Encoder: Decoder, F[_]: Sync, G[_]: Sync](
     underlying: org.quartz.Scheduler,
     action: A => F[Unit],
-    dispatcher: Dispatcher[F],
+    dispatch: F[Unit] => Unit,
 ) extends com.chilipiper.quartz.SchedulerCustom[A, G]
     with Job {
 
@@ -42,7 +42,7 @@ class SchedulerQuartz[A: Encoder: Decoder, F[_]: Sync, G[_]: Sync](
     jobDataString <- Sync[F].delay(context.getJobDetail.getJobDataMap.getString(jobDataMapKey))
     jobData <- decode[A](jobDataString).liftTo[F]
     _ <- executeAction(jobData)
-  } yield ()).uncancelable.handleErrorWith { e =>
+  } yield ()).uncancelable.onError { e =>
     Sync[F].blocking(
       Logger
         .getLogger(getClass.getName)
@@ -54,8 +54,11 @@ class SchedulerQuartz[A: Encoder: Decoder, F[_]: Sync, G[_]: Sync](
     )
   }
 
-  @deprecated("This method must be here because of extending `org.quartz.Job`, but you're not supposed to use it.", "0.4.5")
-  override def execute(context: JobExecutionContext): Unit = dispatcher.unsafeRunAndForget(executeF(context))
+  @deprecated(
+    "This method must be here because of extending `org.quartz.Job`, but you're not supposed to use it.",
+    "0.4.5",
+  )
+  override def execute(context: JobExecutionContext): Unit = dispatch(executeF(context))
 
   override def scheduleJob(trigger: Trigger): G[Instant] = Sync[G].interruptible {
     underlying.scheduleJob(trigger).toInstant
@@ -162,15 +165,13 @@ object SchedulerQuartz {
     "org.quartz.jobStore.isClustered" -> "true",
   )
 
-  private def getBbInitScript[F[_]: Sync](dbInitScriptName: String): F[Fragment] = for {
-    dbInitScript <- Sync[F].interruptible(
-      getClass
-        .getResourceAsStream(s"/org/quartz/impl/jdbcjobstore/$dbInitScriptName")
-        .pipe(Source.fromInputStream)
-        .mkString
-        .pipe(Fragment.const(_)),
-    )
-  } yield dbInitScript
+  private def getBbInitScript[F[_]: Sync](dbInitScriptName: String): F[Fragment] = Sync[F].interruptible(
+    getClass
+      .getResourceAsStream(s"/org/quartz/impl/jdbcjobstore/$dbInitScriptName")
+      .pipe(Source.fromInputStream)
+      .mkString
+      .pipe(Fragment.const(_)),
+  )
 
   private def isDbInitialized(
       prefix: String,
@@ -187,15 +188,19 @@ object SchedulerQuartz {
       transactor: Transactor.Aux[F, DS],
       dbInitScriptName: Option[String] = None,
       customQuartzConfig: Map[String, String] = Map(),
+      dispatcher0: Option[Dispatcher[F]] = None,
+      dispatch: (Dispatcher[F], F[Unit]) => Unit = (d: Dispatcher[F], fu: F[Unit]) => d.unsafeRunAndForget(fu),
   )(action: A => F[Unit]): Resource[F, com.chilipiper.quartz.SchedulerCustom[A, F]] =
-    makeWithCustomScheduler(transactor, dbInitScriptName, customQuartzConfig)(action)
+    makeWithCustomScheduler(transactor, dbInitScriptName, customQuartzConfig, dispatcher0, dispatch)(action)
 
   def makeWithCustomScheduler[A: Encoder: Decoder, DS <: DataSource, F[_]: Async, G[_]: Sync](
       transactor: Transactor.Aux[F, DS],
       dbInitScriptName: Option[String] = None,
       customQuartzConfig: Map[String, String] = Map(),
+      dispatcher0: Option[Dispatcher[F]] = None,
+      dispatch: (Dispatcher[F], F[Unit]) => Unit = (d: Dispatcher[F], fu: F[Unit]) => d.unsafeRunAndForget(fu),
   )(action: A => F[Unit]): Resource[F, com.chilipiper.quartz.SchedulerCustom[A, G]] = for {
-    dispatcher <- Dispatcher.parallel[F](await = true)
+    dispatcher <- dispatcher0.fold(Dispatcher.parallel[F](await = true))(d => Resource.pure[F, Dispatcher[F]](d))
 
     quartzConfig0 = defaultQuartzConfig ++ customQuartzConfig
     dataSourceValue = s"${quartzConfig0(instanceNameKey)}DS"
@@ -229,7 +234,7 @@ object SchedulerQuartz {
       val props = { val p = new Properties(); p.putAll(quartzConfig.asJava); p }
       val schedulerFactory = new StdSchedulerFactory(props)
       val scheduler = schedulerFactory.getScheduler()
-      val schedulerQuartz = new SchedulerQuartz[A, F, G](scheduler, action, dispatcher)
+      val schedulerQuartz = new SchedulerQuartz[A, F, G](scheduler, action, dispatch(dispatcher, _))
       scheduler.setJobFactory((_: TriggerFiredBundle, _: org.quartz.Scheduler) => schedulerQuartz)
       scheduler.start()
       (
@@ -243,7 +248,9 @@ object SchedulerQuartz {
       transactor: Transactor.Aux[F, DS],
       dbInitScriptName: Option[String] = None,
       customQuartzConfig: Map[String, String] = Map(),
+      dispatcher0: Option[Dispatcher[F]] = None,
+      dispatch: (Dispatcher[F], F[Unit]) => Unit = (d: Dispatcher[F], fu: F[Unit]) => d.unsafeRunAndForget(fu),
   )(action: A => F[Unit]): Resource[F, com.chilipiper.quartz.SchedulerCustom[A, G]] =
-    makeWithCustomScheduler(transactor, dbInitScriptName, customQuartzConfig)(action)
+    makeWithCustomScheduler(transactor, dbInitScriptName, customQuartzConfig, dispatcher0, dispatch)(action)
 
 }
