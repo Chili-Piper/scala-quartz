@@ -23,6 +23,8 @@ jobs:
       run: ./sbt +compile
     - name: Test
       run: ./sbt +test
+    - name: publishLocal
+      run: ./sbt +publishLocal
 
   publish:
     needs: test
