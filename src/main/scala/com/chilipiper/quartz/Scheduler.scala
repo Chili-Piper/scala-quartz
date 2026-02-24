@@ -18,7 +18,7 @@ trait Scheduler[A, F[_]] {
 
 trait SchedulerCustom[A, F[_]] extends Scheduler[A, F] {
 
-  /** Use the method instead of manually calling `JobBuilder.newJob` to ensure [this] can work with the job correctly.
+  /** Use the method instead of manually calling `JobBuilder.newJob` to ensure [[this]] can work with the job correctly.
     */
   def newJobDetail(jobKey: JobKey, jobData: A, customize: JobBuilder => JobBuilder = identity): JobDetail
   def scheduleJobCustom(jobKey: JobKey, jobData: A, cronExpression: CronExpression): F[Unit]
