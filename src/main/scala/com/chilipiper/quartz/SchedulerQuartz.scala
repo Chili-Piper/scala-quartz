@@ -165,7 +165,7 @@ object SchedulerQuartz {
     "org.quartz.jobStore.isClustered" -> "true",
   )
 
-  private def getBbInitScript[F[_]: Sync](dbInitScriptName: String): F[Fragment] = Sync[F].interruptible(
+  private def getDbInitScript[F[_]: Sync](dbInitScriptName: String): F[Fragment] = Sync[F].interruptible(
     getClass
       .getResourceAsStream(s"/org/quartz/impl/jdbcjobstore/$dbInitScriptName")
       .pipe(Source.fromInputStream)
@@ -206,7 +206,7 @@ object SchedulerQuartz {
     dataSourceValue = s"${quartzConfig0(instanceNameKey)}DS"
     quartzConfig = quartzConfig0 ++ Map(dataSourceKey -> dataSourceValue)
 
-    dbInitScript <- dbInitScriptName.traverse(getBbInitScript[F]).toResource
+    dbInitScript <- dbInitScriptName.traverse(getDbInitScript[F]).toResource
     _ <- dbInitScript
       .traverse { dbInitScript =>
         for {
