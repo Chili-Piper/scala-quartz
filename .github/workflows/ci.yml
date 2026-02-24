@@ -18,7 +18,6 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
         cache: 'sbt'
-    - uses: coursier/cache-action@v6
     - name: Compile
       run: ./sbt +compile
     - name: Test
@@ -39,7 +38,6 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
         cache: 'sbt'
-    - uses: coursier/cache-action@v6
     - name: Publish
       run: ./sbt ci-release
       env:
