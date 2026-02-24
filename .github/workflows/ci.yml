@@ -19,11 +19,11 @@ jobs:
         java-version: '17'
         cache: 'sbt'
     - name: Compile
-      run: ./sbt +compile
+      run: ./sbt --client +compile
     - name: Test
-      run: ./sbt +test
+      run: ./sbt --client +test
     - name: publishLocal
-      run: ./sbt +publishLocal
+      run: ./sbt --client +publishLocal
 
   publish:
     needs: test
@@ -39,7 +39,7 @@ jobs:
         java-version: '17'
         cache: 'sbt'
     - name: Publish
-      run: ./sbt ci-release
+      run: ./sbt --client ci-release
       env:
         SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
         SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
