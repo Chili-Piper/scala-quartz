@@ -3,14 +3,18 @@ deployments:
     development:
       - "sandbox"
       - "*-sandbox"
+      - "sandbox-gw"
     testing:
       - "testing"
       - "*-testing"
+      - "testing-gw"
     staging:
       - "staging"
       - "*-staging"
+      - "staging-gw"
     production:
       - "production"
+      - "production-gw"
       - "canary"
       - "*-production"
       - "*-canary"
