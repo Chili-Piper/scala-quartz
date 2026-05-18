@@ -8,6 +8,7 @@ import java.time.Instant
 trait Scheduler[A, F[_]] {
   def scheduleJob(trigger: Trigger): F[Instant]
   def scheduleJob(jobDetail: JobDetail, trigger: Trigger): F[Instant]
+  def scheduleJobs(jobsAndTriggers: Map[JobDetail, Set[Trigger]], replace: Boolean): F[Unit]
   def checkExists(jobKey: JobKey): F[Boolean]
   def deleteJob(jobKey: JobKey): F[Boolean]
   def addJob(jobDetail: JobDetail, replace: Boolean): F[Unit]
@@ -29,4 +30,9 @@ trait SchedulerCustom[A, F[_]] extends Scheduler[A, F] {
       configure: TriggerBuilder[Trigger] => TriggerBuilder[? <: Trigger],
       customizeJob: JobBuilder => JobBuilder = identity,
   ): F[Instant]
+
+  def scheduleJobsCustom(
+      jobsAndTriggers: Map[JobKey, (A, TriggerBuilder[Trigger] => TriggerBuilder[? <: Trigger])],
+      customizeJob: (JobKey, A) => JobBuilder => JobBuilder = { (_, _) => identity },
+  ): F[Unit]
 }
