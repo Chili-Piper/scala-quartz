@@ -68,6 +68,14 @@ class SchedulerQuartz[A: Encoder: Decoder, F[_]: Sync, G[_]: Sync](
     underlying.scheduleJob(jobDetail, trigger).toInstant
   }
 
+  override def scheduleJobs(jobsAndTriggers: Map[JobDetail, Set[Trigger]], replace: Boolean): G[Unit] =
+    Sync[G].interruptible {
+      underlying.scheduleJobs(
+        jobsAndTriggers.view.mapValues(_.asJava: java.util.Set[_ <: Trigger]).toMap.asJava,
+        replace,
+      )
+    }
+
   override def checkExists(jobKey: JobKey): G[Boolean] = Sync[G].interruptible {
     underlying.checkExists(jobKey)
   }
@@ -121,10 +129,10 @@ class SchedulerQuartz[A: Encoder: Decoder, F[_]: Sync, G[_]: Sync](
       configure: TriggerBuilder[Trigger] => TriggerBuilder[? <: Trigger],
       customizeJob: JobBuilder => JobBuilder = identity,
   ): G[Instant] = for {
-    jobDetail <- Sync[G].blocking {
+    jobDetail <- Sync[G].delay {
       newJobDetail(jobKey, jobData, _.requestRecovery(true).pipe(customizeJob))
     }
-    trigger <- Sync[G].blocking {
+    trigger <- Sync[G].delay {
       TriggerBuilder
         .newTrigger()
         .pipe(configure)
@@ -136,6 +144,35 @@ class SchedulerQuartz[A: Encoder: Decoder, F[_]: Sync, G[_]: Sync](
     _ <- Sync[G].whenA(exists)(deleteJob(jobKey))
     result <- scheduleJob(jobDetail, trigger)
   } yield result
+
+  override def scheduleJobsCustom(
+      jobsAndTriggers: Map[JobKey, (A, TriggerBuilder[Trigger] => TriggerBuilder[_ <: Trigger])],
+      customizeJob: (JobKey, A) => JobBuilder => JobBuilder,
+  ): G[Unit] = for {
+    jobDetails <- Sync[G].delay {
+      jobsAndTriggers.view.map { case (jobKey, (jobData, _)) =>
+        jobKey -> newJobDetail(jobKey, jobData, _.requestRecovery(true).pipe(customizeJob(jobKey, jobData)))
+      }.toMap
+    }
+    triggers <- Sync[G].delay {
+      jobsAndTriggers.view.map { case (jobKey, (_, configure)) =>
+        jobKey ->
+          (TriggerBuilder
+            .newTrigger()
+            .pipe(configure)
+            .withIdentity(TriggerKey.triggerKey(jobKey.getName, jobKey.getGroup))
+            .forJob(jobDetails(jobKey))
+            .build(): Trigger)
+      }.toMap
+    }
+    combinedData: Map[JobDetail, Set[Trigger]] =
+      for {
+        (key, _) <- jobsAndTriggers
+        jobDetail <- jobDetails.get(key)
+        trigger <- triggers.get(key)
+      } yield jobDetail -> Set(trigger)
+    _ <- scheduleJobs(combinedData, replace = true)
+  } yield ()
 }
 
 object SchedulerQuartz {
