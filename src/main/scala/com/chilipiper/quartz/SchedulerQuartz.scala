@@ -100,6 +100,10 @@ class SchedulerQuartz[A: Encoder: Decoder, F[_]: Sync, G[_]: Sync](
     underlying.getJobDetail(jobKey)
   }
 
+  override def getTriggers(jobKey: JobKey): G[List[Trigger]] = Sync[G].interruptible {
+    underlying.getTriggersOfJob(jobKey).asScala.toList
+  }
+
   override def newJobDetail(jobKey: JobKey, jobData: A, customize: JobBuilder => JobBuilder = identity): JobDetail =
     JobBuilder
       .newJob(classOf[SchedulerQuartz[A, F, G]])

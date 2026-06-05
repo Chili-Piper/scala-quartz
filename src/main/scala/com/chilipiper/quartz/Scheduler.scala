@@ -15,6 +15,7 @@ trait Scheduler[A, F[_]] {
   def triggerJob(jobKey: JobKey): F[Unit]
   def getJobKeys(matcher: GroupMatcher[JobKey]): F[Set[JobKey]]
   def getJobDetail(jobKey: JobKey): F[JobDetail]
+  def getTriggers(jobKey: JobKey): F[List[Trigger]]
 }
 
 trait SchedulerCustom[A, F[_]] extends Scheduler[A, F] {
