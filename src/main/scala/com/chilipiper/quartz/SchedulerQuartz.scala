@@ -81,7 +81,15 @@ class SchedulerQuartz[A: Encoder: Decoder, F[_]: Sync, G[_]: Sync](
   }
 
   override def deleteJob(jobKey: JobKey): G[Boolean] = Sync[G].interruptible {
-    underlying.deleteJob(jobKey)
+    try underlying.deleteJob(jobKey)
+    catch {
+      case _: JobPersistenceException =>
+        // A trigger whose extended-properties row (e.g. QRTZ_CRON_TRIGGERS) is missing cannot be
+        // loaded, so `deleteJob` fails while listing the job's triggers. `unscheduleJob` deletes by
+        // key without loading the trigger, so it removes the corrupted trigger; then retry.
+        underlying.unscheduleJob(TriggerKey.triggerKey(jobKey.getName, jobKey.getGroup))
+        underlying.deleteJob(jobKey)
+    }
   }
 
   override def addJob(jobDetail: JobDetail, replace: Boolean): G[Unit] = Sync[G].interruptible {
@@ -175,6 +183,11 @@ class SchedulerQuartz[A: Encoder: Decoder, F[_]: Sync, G[_]: Sync](
         jobDetail <- jobDetails.get(key)
         trigger <- triggers.get(key)
       } yield jobDetail -> Set(trigger)
+    // `scheduleJobs(replace = true)` updates an existing trigger in place: it flips TRIGGER_TYPE in
+    // QRTZ_TRIGGERS but only issues an UPDATE against the new type's extended-properties table, so a
+    // type change (e.g. simple -> cron) affects 0 rows and leaves a trigger that can neither be
+    // loaded nor deleted. Delete existing jobs first so triggers are always freshly inserted.
+    _ <- jobsAndTriggers.keys.toList.traverse_(deleteJob)
     _ <- scheduleJobs(combinedData, replace = true)
   } yield ()
 }
