@@ -15,7 +15,7 @@ import io.circe.{Decoder, Encoder}
 import org.quartz._
 import org.quartz.impl.StdSchedulerFactory
 import org.quartz.impl.matchers.GroupMatcher
-import org.quartz.spi.TriggerFiredBundle
+import org.quartz.spi.{OperableTrigger, TriggerFiredBundle}
 import org.quartz.utils._
 
 import java.sql.Connection
@@ -152,9 +152,17 @@ class SchedulerQuartz[A: Encoder: Decoder, F[_]: Sync, G[_]: Sync](
         .forJob(jobDetail)
         .build()
     }
-    exists <- checkExists(jobKey)
-    _ <- Sync[G].whenA(exists)(deleteJob(jobKey))
-    result <- scheduleJob(jobDetail, trigger)
+    // Atomic, cluster-safe upsert. `scheduleJob(jobDetail, {trigger}, replace = true)` stores the job and its
+    // trigger inside a single Quartz trigger-access lock, so a concurrent scheduler node (e.g. the outgoing pod
+    // during a rolling deploy) cannot slip between a separate existence check and the store. The previous
+    // checkExists -> deleteJob -> scheduleJob sequence had exactly that gap, which surfaced as
+    // `ObjectAlreadyExistsException` and crashed callers on startup. `computeFirstFireTime` is what Quartz calls
+    // internally, so it yields the same first-fire `Instant` the old `scheduleJob(jobDetail, trigger)` returned.
+    result <- Sync[G].interruptible {
+      val firstFireTime = trigger.asInstanceOf[OperableTrigger].computeFirstFireTime(null)
+      underlying.scheduleJob(jobDetail, java.util.Collections.singleton(trigger), true)
+      firstFireTime.toInstant
+    }
   } yield result
 
   override def scheduleJobsCustom(
