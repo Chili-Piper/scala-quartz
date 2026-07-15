@@ -68,6 +68,18 @@ class SchedulerQuartz[A: Encoder: Decoder, F[_]: Sync, G[_]: Sync](
     underlying.scheduleJob(jobDetail, trigger).toInstant
   }
 
+  override def scheduleJob(jobDetail: JobDetail, trigger: Trigger, replace: Boolean): G[Instant] =
+    Sync[G].interruptible {
+      // Atomic, cluster-safe upsert. `scheduleJob(jobDetail, {trigger}, replace)` stores the job and its trigger
+      // inside a single Quartz trigger-access lock, so concurrent scheduler nodes (e.g. the outgoing and incoming
+      // pods during a rolling deploy) serialize instead of racing a separate existence check and store. With
+      // replace = true this cannot throw `ObjectAlreadyExistsException`. `computeFirstFireTime` mirrors what Quartz
+      // computes internally, so the returned first-fire `Instant` matches `scheduleJob(jobDetail, trigger)`.
+      val firstFireTime = trigger.asInstanceOf[OperableTrigger].computeFirstFireTime(null)
+      underlying.scheduleJob(jobDetail, java.util.Collections.singleton(trigger), replace)
+      firstFireTime.toInstant
+    }
+
   override def scheduleJobs(jobsAndTriggers: Map[JobDetail, Set[Trigger]], replace: Boolean): G[Unit] =
     Sync[G].interruptible {
       underlying.scheduleJobs(
@@ -152,17 +164,10 @@ class SchedulerQuartz[A: Encoder: Decoder, F[_]: Sync, G[_]: Sync](
         .forJob(jobDetail)
         .build()
     }
-    // Atomic, cluster-safe upsert. `scheduleJob(jobDetail, {trigger}, replace = true)` stores the job and its
-    // trigger inside a single Quartz trigger-access lock, so a concurrent scheduler node (e.g. the outgoing pod
-    // during a rolling deploy) cannot slip between a separate existence check and the store. The previous
-    // checkExists -> deleteJob -> scheduleJob sequence had exactly that gap, which surfaced as
-    // `ObjectAlreadyExistsException` and crashed callers on startup. `computeFirstFireTime` is what Quartz calls
-    // internally, so it yields the same first-fire `Instant` the old `scheduleJob(jobDetail, trigger)` returned.
-    result <- Sync[G].interruptible {
-      val firstFireTime = trigger.asInstanceOf[OperableTrigger].computeFirstFireTime(null)
-      underlying.scheduleJob(jobDetail, java.util.Collections.singleton(trigger), true)
-      firstFireTime.toInstant
-    }
+    // Atomic, cluster-safe upsert via `scheduleJob(..., replace = true)`. This replaces the previous
+    // checkExists -> deleteJob -> scheduleJob sequence, whose non-atomic gap let a concurrent scheduler node
+    // (e.g. the outgoing pod during a rolling deploy) wedge in and cause `ObjectAlreadyExistsException` on startup.
+    result <- scheduleJob(jobDetail, trigger, replace = true)
   } yield result
 
   override def scheduleJobsCustom(

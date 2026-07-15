@@ -8,6 +8,12 @@ import java.time.Instant
 trait Scheduler[A, F[_]] {
   def scheduleJob(trigger: Trigger): F[Instant]
   def scheduleJob(jobDetail: JobDetail, trigger: Trigger): F[Instant]
+
+  /** Atomically stores `jobDetail` and `trigger` together (single Quartz trigger-access lock). With `replace = true` it
+    * upserts rather than failing when the job/trigger already exists, so concurrent scheduler nodes cannot race into an
+    * `ObjectAlreadyExistsException`. Returns the trigger's first fire time.
+    */
+  def scheduleJob(jobDetail: JobDetail, trigger: Trigger, replace: Boolean): F[Instant]
   def scheduleJobs(jobsAndTriggers: Map[JobDetail, Set[Trigger]], replace: Boolean): F[Unit]
   def checkExists(jobKey: JobKey): F[Boolean]
   def deleteJob(jobKey: JobKey): F[Boolean]
