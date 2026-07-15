@@ -68,6 +68,17 @@ class SchedulerQuartz[A: Encoder: Decoder, F[_]: Sync, G[_]: Sync](
     underlying.scheduleJob(jobDetail, trigger).toInstant
   }
 
+  override def scheduleJob(jobDetail: JobDetail, trigger: Trigger, replace: Boolean): G[Instant] =
+    Sync[G].interruptible {
+      // Atomic, cluster-safe upsert: stores the job and its trigger inside a single Quartz trigger-access lock, so
+      // concurrent scheduler nodes (e.g. the outgoing and incoming pods during a rolling deploy) serialize instead
+      // of racing a separate existence check and store. With replace = true this cannot throw
+      // `ObjectAlreadyExistsException`. Quartz computes the trigger's first fire time while scheduling and sets it
+      // on the passed trigger (throwing if it would never fire), so we read it back for the return value.
+      underlying.scheduleJob(jobDetail, java.util.Collections.singleton(trigger), replace)
+      trigger.getNextFireTime.toInstant
+    }
+
   override def scheduleJobs(jobsAndTriggers: Map[JobDetail, Set[Trigger]], replace: Boolean): G[Unit] =
     Sync[G].interruptible {
       underlying.scheduleJobs(
@@ -152,9 +163,10 @@ class SchedulerQuartz[A: Encoder: Decoder, F[_]: Sync, G[_]: Sync](
         .forJob(jobDetail)
         .build()
     }
-    exists <- checkExists(jobKey)
-    _ <- Sync[G].whenA(exists)(deleteJob(jobKey))
-    result <- scheduleJob(jobDetail, trigger)
+    // Atomic, cluster-safe upsert via `scheduleJob(..., replace = true)`. This replaces the previous
+    // checkExists -> deleteJob -> scheduleJob sequence, whose non-atomic gap let a concurrent scheduler node
+    // (e.g. the outgoing pod during a rolling deploy) wedge in and cause `ObjectAlreadyExistsException` on startup.
+    result <- scheduleJob(jobDetail, trigger, replace = true)
   } yield result
 
   override def scheduleJobsCustom(
