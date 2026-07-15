@@ -15,7 +15,7 @@ import io.circe.{Decoder, Encoder}
 import org.quartz._
 import org.quartz.impl.StdSchedulerFactory
 import org.quartz.impl.matchers.GroupMatcher
-import org.quartz.spi.{OperableTrigger, TriggerFiredBundle}
+import org.quartz.spi.TriggerFiredBundle
 import org.quartz.utils._
 
 import java.sql.Connection
@@ -70,14 +70,13 @@ class SchedulerQuartz[A: Encoder: Decoder, F[_]: Sync, G[_]: Sync](
 
   override def scheduleJob(jobDetail: JobDetail, trigger: Trigger, replace: Boolean): G[Instant] =
     Sync[G].interruptible {
-      // Atomic, cluster-safe upsert. `scheduleJob(jobDetail, {trigger}, replace)` stores the job and its trigger
-      // inside a single Quartz trigger-access lock, so concurrent scheduler nodes (e.g. the outgoing and incoming
-      // pods during a rolling deploy) serialize instead of racing a separate existence check and store. With
-      // replace = true this cannot throw `ObjectAlreadyExistsException`. `computeFirstFireTime` mirrors what Quartz
-      // computes internally, so the returned first-fire `Instant` matches `scheduleJob(jobDetail, trigger)`.
-      val firstFireTime = trigger.asInstanceOf[OperableTrigger].computeFirstFireTime(null)
+      // Atomic, cluster-safe upsert: stores the job and its trigger inside a single Quartz trigger-access lock, so
+      // concurrent scheduler nodes (e.g. the outgoing and incoming pods during a rolling deploy) serialize instead
+      // of racing a separate existence check and store. With replace = true this cannot throw
+      // `ObjectAlreadyExistsException`. Quartz computes the trigger's first fire time while scheduling and sets it
+      // on the passed trigger (throwing if it would never fire), so we read it back for the return value.
       underlying.scheduleJob(jobDetail, java.util.Collections.singleton(trigger), replace)
-      firstFireTime.toInstant
+      trigger.getNextFireTime.toInstant
     }
 
   override def scheduleJobs(jobsAndTriggers: Map[JobDetail, Set[Trigger]], replace: Boolean): G[Unit] =
