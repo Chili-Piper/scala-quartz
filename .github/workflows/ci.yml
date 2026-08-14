@@ -18,10 +18,8 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
         cache: 'sbt'
-    - name: Compile
-      run: ./sbt +compile
-    - name: Test
-      run: ./sbt +test
+    - name: Lint, compile and test
+      run: ./sbt ci
     - name: publishLocal
       run: ./sbt +publishLocal
 
