@@ -9,6 +9,10 @@ val root = (project in file("."))
       Dependencies.quartz,
       Dependencies.doobieCore,
       Dependencies.circeJawn,
+      Dependencies.munit % Test,
+      Dependencies.munitCatsEffect % Test,
+      Dependencies.postgres % Test,
+      Dependencies.testcontainersPostgres % Test,
     ),
   )
   .enablePlugins(BuildInfoPlugin)
