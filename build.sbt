@@ -37,16 +37,6 @@ lazy val commonSettings = List(
   semanticdbVersion := scalafixSemanticdb.revision,
   scalaVersion := "2.13.18",
   crossScalaVersions := List(scalaVersion.value, "3.3.7"),
-  libraryDependencies ++= {
-    CrossVersion.partialVersion(scalaVersion.value) match {
-      case Some((2, _)) =>
-        List(
-          "org.typelevel" % "kind-projector" % "0.13.4" cross CrossVersion.full,
-          "com.olegpy" %% "better-monadic-for" % "0.3.1",
-        )
-      case _ => List()
-    }
-  },
   buildInfoKeys := List[BuildInfoKey](organization, moduleName, version),
   buildInfoOptions += BuildInfoOption.ToJson,
   buildInfoPackage := s"${organization.value}.${moduleName.value}".replace("-", "."),
