@@ -19,10 +19,9 @@ import scala.concurrent.ExecutionContext
   * extended-properties row actually lived in `QRTZ_SIMPLE_TRIGGERS` (with none in `QRTZ_CRON_TRIGGERS`) crash-looped
   * the workload.
   *
-  * These tests assert that stock Quartz (>= 2.5.3, which carries upstream #1496) both prevents this corruption and
-  * tolerates a pre-existing corrupted row through the plain wrapper API — i.e. WITHOUT the former scala-quartz
-  * workarounds (the `deleteJob` self-heal and the `scheduleJobsCustom` delete-before-insert), which this PR removes. If
-  * any of these go red, the corresponding workaround is still needed and must be restored.
+  * `scheduleJobsCustom` relies on stock Quartz (>= 2.5.3, which carries upstream #1496) to PREVENT this corruption, so
+  * the former delete-before-insert workaround is gone. `deleteJob` keeps its self-heal: #1496 does not repair rows that
+  * older Quartz versions already corrupted, and stock `deleteJob` still fails on them.
   *
   * They run against a real Postgres because the behaviour lives entirely in the SQL/JDBC layer.
   */
@@ -52,7 +51,6 @@ class SchedulerQuartzTriggerCorruptionTest extends CatsEffectSuite {
     )
 
   private val group = "TestGroup"
-  private val farFuture = Instant.now.plusSeconds(86400).toEpochMilli
 
   private def countByJob(table: String, jobName: String): IO[Int] =
     (fr"select count(*) from" ++ Fragment.const(table) ++
@@ -69,17 +67,6 @@ class SchedulerQuartzTriggerCorruptionTest extends CatsEffectSuite {
     sql"""update qrtz_triggers set trigger_type = 'CRON'
           where trigger_name = $triggerName and trigger_group = $group""".update.run.transact(xa).void
 
-  /** Injects a second, corrupted trigger for an existing job, with a trigger key different from the job key. */
-  private def injectCorruptTrigger(triggerName: String, jobName: String): IO[Unit] =
-    (sql"""insert into qrtz_triggers
-             (sched_name, trigger_name, trigger_group, job_name, job_group,
-              trigger_state, trigger_type, start_time, next_fire_time, priority, misfire_instr)
-           values ('SchedulerQuartz', $triggerName, $group, $jobName, $group,
-              'WAITING', 'CRON', $farFuture, $farFuture, 5, 1)""".update.run *>
-      sql"""insert into qrtz_simple_triggers
-             (sched_name, trigger_name, trigger_group, repeat_count, repeat_interval, times_triggered)
-           values ('SchedulerQuartz', $triggerName, $group, 0, 0, 0)""".update.run).transact(xa).void
-
   private def assertJobFullyPurged(jobName: String, triggerNames: List[String]): IO[Unit] =
     for {
       triggers <- countByJob("qrtz_triggers", jobName)
@@ -93,7 +80,7 @@ class SchedulerQuartzTriggerCorruptionTest extends CatsEffectSuite {
       assertEquals(cron, 0, "qrtz_cron_triggers rows must be gone")
     }
 
-  test("deleteJob removes a trigger whose type disagrees with its extended-properties table (no self-heal needed)") {
+  test("deleteJob removes a trigger whose type disagrees with its extended-properties table (self-heal)") {
     val jobName = "corrupt-simple"
     val jobKey = JobKey.jobKey(jobName, group)
     scheduler.use { sched =>
@@ -101,7 +88,7 @@ class SchedulerQuartzTriggerCorruptionTest extends CatsEffectSuite {
         _ <- sched.scheduleJobCustom(jobKey, "payload", Instant.now.plusSeconds(3600))
         _ <- corruptSimpleTriggerToCron(jobName)
         deleted <- sched.deleteJob(jobKey)
-        _ <- IO(assert(deleted, "stock deleteJob should remove the job despite the corrupted trigger"))
+        _ <- IO(assert(deleted, "deleteJob should remove the job despite the corrupted trigger"))
         _ <- assertJobFullyPurged(jobName, List(jobName))
       } yield ()
     }
@@ -125,21 +112,6 @@ class SchedulerQuartzTriggerCorruptionTest extends CatsEffectSuite {
         deleted <- sched.deleteJob(jobKey)
         _ <- IO(assert(deleted, "a well-formed job should delete cleanly"))
         _ <- assertJobFullyPurged(jobName, List(jobName))
-      } yield ()
-    }
-  }
-
-  test("deleteJob removes a job whose corrupted trigger's key differs from the job key (no raw-SQL fallback needed)") {
-    val jobName = "multi-trigger"
-    val badTrigger = "multi-trigger-orphan"
-    val jobKey = JobKey.jobKey(jobName, group)
-    scheduler.use { sched =>
-      for {
-        _ <- sched.scheduleJobCustom(jobKey, "payload", Instant.now.plusSeconds(3600))
-        _ <- injectCorruptTrigger(badTrigger, jobName)
-        deleted <- sched.deleteJob(jobKey)
-        _ <- IO(assert(deleted, "stock deleteJob should remove the job and all of its triggers"))
-        _ <- assertJobFullyPurged(jobName, List(jobName, badTrigger))
       } yield ()
     }
   }

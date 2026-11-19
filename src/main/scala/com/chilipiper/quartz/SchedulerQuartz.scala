@@ -92,7 +92,19 @@ class SchedulerQuartz[A: Encoder: Decoder, F[_]: Sync, G[_]: Sync](
   }
 
   override def deleteJob(jobKey: JobKey): G[Boolean] = Sync[G].interruptible {
-    underlying.deleteJob(jobKey)
+    try underlying.deleteJob(jobKey)
+    catch {
+      case _: JobPersistenceException =>
+        // A trigger whose extended-properties row (e.g. QRTZ_CRON_TRIGGERS) is missing cannot be
+        // loaded, so `deleteJob` fails while listing the job's triggers. `unscheduleJob` deletes by
+        // key without loading the trigger, so it removes the corrupted trigger; then retry.
+        // Still needed with Quartz 2.5.3: upstream #1496 stops new corruption, but rows corrupted by
+        // older versions stay in the DB and stock `deleteJob` still fails on them.
+        // Unscheduling the last trigger of a non-durable job already removes the job, so the retry
+        // may return `false`; either step removing something counts as success.
+        val unscheduled = underlying.unscheduleJob(TriggerKey.triggerKey(jobKey.getName, jobKey.getGroup))
+        underlying.deleteJob(jobKey) || unscheduled
+    }
   }
 
   override def addJob(jobDetail: JobDetail, replace: Boolean): G[Unit] = Sync[G].interruptible {
