@@ -37,18 +37,10 @@ lazy val commonSettings = List(
     ),
   ),
   versionScheme := Some("early-semver"),
+  semanticdbEnabled := true,
+  semanticdbVersion := scalafixSemanticdb.revision,
   scalaVersion := "2.13.18",
   crossScalaVersions := List(scalaVersion.value, "3.3.7"),
-  libraryDependencies ++= {
-    CrossVersion.partialVersion(scalaVersion.value) match {
-      case Some((2, _)) =>
-        List(
-          "org.typelevel" % "kind-projector" % "0.13.4" cross CrossVersion.full,
-          "com.olegpy" %% "better-monadic-for" % "0.3.1",
-        )
-      case _ => List()
-    }
-  },
   buildInfoKeys := List[BuildInfoKey](organization, moduleName, version),
   buildInfoOptions += BuildInfoOption.ToJson,
   buildInfoPackage := s"${organization.value}.${moduleName.value}".replace("-", "."),
@@ -59,6 +51,7 @@ lazy val commonSettings = List(
           "-explaintypes", // Explain type errors in more detail.
           "-Vimplicits", // Enables the tek/splain features to make the compiler print implicit resolution chains when no implicit value can be found
           "-Vtype-diffs", // Enables the tek/splain features to turn type error messages (found: X, required: Y) into colored diffs between the two types
+          "-Wunused", // Required by the scalafix RemoveUnused rule.
         )
       case _ =>
         List(
@@ -73,5 +66,5 @@ lazy val commonSettings = List(
 
 addCommandAlias(
   "ci",
-  "; scalafmtCheckAll; scalafmtSbtCheck; +compile; +test",
+  "; scalafmtSbtCheck; scalafmtCheckAll; +compile; +test; scalafixAll --check",
 )
