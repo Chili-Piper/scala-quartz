@@ -98,8 +98,12 @@ class SchedulerQuartz[A: Encoder: Decoder, F[_]: Sync, G[_]: Sync](
         // A trigger whose extended-properties row (e.g. QRTZ_CRON_TRIGGERS) is missing cannot be
         // loaded, so `deleteJob` fails while listing the job's triggers. `unscheduleJob` deletes by
         // key without loading the trigger, so it removes the corrupted trigger; then retry.
-        underlying.unscheduleJob(TriggerKey.triggerKey(jobKey.getName, jobKey.getGroup))
-        underlying.deleteJob(jobKey)
+        // Still needed with Quartz 2.5.3: upstream #1496 stops new corruption, but rows corrupted by
+        // older versions stay in the DB and stock `deleteJob` still fails on them.
+        // Unscheduling the last trigger of a non-durable job already removes the job, so the retry
+        // may return `false`; either step removing something counts as success.
+        val unscheduled = underlying.unscheduleJob(TriggerKey.triggerKey(jobKey.getName, jobKey.getGroup))
+        underlying.deleteJob(jobKey) || unscheduled
     }
   }
 
@@ -195,11 +199,12 @@ class SchedulerQuartz[A: Encoder: Decoder, F[_]: Sync, G[_]: Sync](
         jobDetail <- jobDetails.get(key)
         trigger <- triggers.get(key)
       } yield jobDetail -> Set(trigger)
-    // `scheduleJobs(replace = true)` updates an existing trigger in place: it flips TRIGGER_TYPE in
-    // QRTZ_TRIGGERS but only issues an UPDATE against the new type's extended-properties table, so a
-    // type change (e.g. simple -> cron) affects 0 rows and leaves a trigger that can neither be
-    // loaded nor deleted. Delete existing jobs first so triggers are always freshly inserted.
-    _ <- jobsAndTriggers.keys.toList.traverse_(deleteJob)
+    // `scheduleJobs(replace = true)` replaces an existing trigger in place. On a trigger-type change
+    // (e.g. simple -> cron) Quartz < 2.5.3 flipped TRIGGER_TYPE in QRTZ_TRIGGERS but only issued an
+    // UPDATE against the new type's extended-properties table, so it affected 0 rows and left a
+    // trigger that could neither be loaded nor deleted. Quartz 2.5.3 fixes this at the source
+    // (upstream #1496: `StdJDBCDelegate.updateTrigger` now delete+inserts the extension row), so the
+    // former delete-before-insert workaround here is no longer needed.
     _ <- scheduleJobs(combinedData, replace = true)
   } yield ()
 }
