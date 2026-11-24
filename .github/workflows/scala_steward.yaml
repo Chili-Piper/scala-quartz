@@ -22,3 +22,5 @@ jobs:
           github-token: ${{ secrets.SCALA_STEWARD }}
           author-email: "scala-steward@chilipiper.com"
           author-name: "Scala Steward Bot"
+          # Bulldozer merges only labelled PRs (bulldozer-config .bulldozer.yml whitelist)
+          other-args: "--add-labels"
